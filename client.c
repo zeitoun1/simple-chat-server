@@ -6,16 +6,19 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include "protocol.h"
+#include "user.h"
+#include "screen.h" 
+#include "helper.h"
 
 
 int main(int argc, char **argv) {
-    
+
     // client socket configuration
     int client_soc = socket(AF_INET, SOCK_STREAM, 0);
     if(client_soc == -1) {
         perror("socket");
         close(client_soc);
-        exit(1);
+        exit(1);    
     }
     
     struct sockaddr_in server;
@@ -24,7 +27,7 @@ int main(int argc, char **argv) {
     getaddrinfo(host, NULL, NULL, &result);
     server.sin_addr = ((struct sockaddr_in *)(result->ai_addr))->sin_addr;
     freeaddrinfo(result);
-
+    
     server.sin_family = AF_INET;
     memset(&(server.sin_zero), 0, 8);
     server.sin_port = htons(PORT);
@@ -37,7 +40,9 @@ int main(int argc, char **argv) {
         perror("connect");
         exit(1); 
     }
-
+    
+    init_main_screen();
+    
     fd_set openfds;
     fd_set readfds;
     FD_ZERO(&openfds);
@@ -48,6 +53,15 @@ int main(int argc, char **argv) {
 
     char message_buf[MAXSIZE]; 
     char server_buf[MAXSIZE];
+    char username[MAX_USERNAME];
+
+    int username_len = init_username_screen(username, MAX_USERNAME);
+    complete_write(client_soc, username, username_len + 1);
+    
+
+    init_message_box();
+    init_text_box();
+    
     while(1) {
         readfds = openfds;
         int num_ready = select(4, &readfds, NULL, NULL, NULL);
@@ -58,7 +72,8 @@ int main(int argc, char **argv) {
         }
         
         if(FD_ISSET(client_soc, &readfds)) { // read new message from server
-            int num_bytes_read = read(client_soc, server_buf, MAXSIZE);
+            int num_bytes_read = complete_read(client_soc, server_buf, MAXSIZE);
+			
 
             if(num_bytes_read == -1) {  
                 perror("read");
@@ -66,21 +81,21 @@ int main(int argc, char **argv) {
                 exit(1);
             }
 
-            server_buf[num_bytes_read] = '\0';
-            printf("%s", server_buf);
+            show_message(server_buf);
         }
         
         if(FD_ISSET(fileno(stdin), &readfds)) { // client has written a message
-            int num_bytes_read = read(fileno(stdin), message_buf, MAXSIZE);
+            int num_bytes_read = read_new_message(message_buf, MAXSIZE);
             if(num_bytes_read == -1) {
                 perror("read");
                 exit(1);
-            } else if (num_bytes_read == 0) {
+            } else if (num_bytes_read == 1) {
                 printf("cannot send empty message\n");
                 continue;
             }
-
-            write(client_soc, message_buf, num_bytes_read);
+            show_message(message_buf);
+            complete_write(client_soc, message_buf, num_bytes_read);
+			
         }
     
     }
